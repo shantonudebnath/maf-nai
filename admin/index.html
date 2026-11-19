@@ -36,8 +36,16 @@ button.alt{background:#2a3147}button.red{background:#b43a3a}button:disabled{opac
 </head>
 <body>
 <div class="wrap">
-<div id="login" class="card" style="max-width:520px;margin-top:40px">
+<div id="gate" class="card" style="max-width:520px;margin-top:40px">
   <h1>Admin login</h1>
+  <label>Username</label><input id="gu" type="text" autocomplete="username">
+  <label>Password</label><input id="gp" type="password" autocomplete="current-password">
+  <p><button id="gg">Login</button></p>
+  <div id="gerr" class="err"></div>
+</div>
+
+<div id="login" class="card" style="max-width:520px;margin-top:40px" hidden>
+  <h1>GitHub connect</h1>
   <p class="note">Login = GitHub token jar repo te <b>write</b> access ache. Token chhara keu kichu save korte parbe na.<br>
   Token banao: GitHub &rarr; Settings &rarr; Developer settings &rarr; Fine-grained tokens &rarr; shudhu ei repo, <b>Contents: Read and write</b>.</p>
   <label>GitHub token</label><input id="tok" type="password" autocomplete="off" placeholder="github_pat_...">
@@ -101,11 +109,11 @@ function rawUrl(p) { return 'https://raw.githubusercontent.com/' + S.owner + '/'
   var r = cfg.repo || (/\.github\.io$/.test(host) && seg[0] && seg[0] !== 'admin' ? seg[0] : 'maf-nai');
   $('#own').value = o; $('#rep').value = r; $('#brn').value = cfg.branch || 'main';
   var t = ''; try { t = localStorage.getItem('mn_admin_tok') || sessionStorage.getItem('mn_admin_tok') || ''; } catch (e) {}
-  if (t) { $('#tok').value = t; doLogin(true); }
+  if (sessionStorage.getItem('mn_admin_gate') === '1') openLogin(t);
 })();
 $('#go').addEventListener('click', function () { doLogin(false); });
 $('#tok').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(false); });
-$('#out').addEventListener('click', function () { try { localStorage.removeItem('mn_admin_tok'); sessionStorage.removeItem('mn_admin_tok'); } catch (e) {} location.reload(); });
+$('#out').addEventListener('click', function () { try { localStorage.removeItem('mn_admin_tok'); sessionStorage.removeItem('mn_admin_tok'); sessionStorage.removeItem('mn_admin_gate'); } catch (e) {} location.reload(); });
 
 async function doLogin(silent) {
   $('#lerr').textContent = '';
@@ -129,6 +137,37 @@ async function doLogin(silent) {
   }
   $('#go').disabled = false;
 }
+
+// ---------- username/password gate ----------
+var GATE = { salt: 'a462dee8a201c5e1f6f81e15d58e87e2', iter: 150000, hash: '2d42a4d6263c17afa1d4b4e657061fc36bd5a19c88aa446422d0f966ab8da6eb' };
+function hexOf(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+function unhex(h) { var a = new Uint8Array(h.length / 2); for (var i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16); return a; }
+async function gateHash(u, p) {
+  var k = await crypto.subtle.importKey('raw', new TextEncoder().encode(u + '\n' + p), 'PBKDF2', false, ['deriveBits']);
+  return hexOf(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: unhex(GATE.salt), iterations: GATE.iter }, k, 256));
+}
+function openLogin(t) {
+  $('#gate').hidden = true; $('#login').hidden = false;
+  if (t) { $('#tok').value = t; doLogin(true); }
+}
+async function gateGo() {
+  $('#gerr').textContent = ''; $('#gg').disabled = true;
+  try {
+    var h = await gateHash($('#gu').value.trim(), $('#gp').value);
+    if (h === GATE.hash) {
+      try { sessionStorage.setItem('mn_admin_gate', '1'); } catch (e) {}
+      $('#gp').value = '';
+      var t = ''; try { t = localStorage.getItem('mn_admin_tok') || sessionStorage.getItem('mn_admin_tok') || ''; } catch (e) {}
+      openLogin(t);
+    } else {
+      await new Promise(function (r) { setTimeout(r, 1200); });
+      $('#gerr').textContent = 'Username ba password vul.';
+    }
+  } catch (e) { $('#gerr').textContent = 'Login error: ' + (e.message || e); }
+  $('#gg').disabled = false;
+}
+$('#gg').addEventListener('click', gateGo);
+$('#gp').addEventListener('keydown', function (e) { if (e.key === 'Enter') gateGo(); });
 
 // ---------- load + parse ----------
 async function load() {
