@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Admin - মাফ নাই</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,"Noto Sans Bengali",sans-serif;background:#12151c;color:#e8eaf0}
+h1,h2{margin:0 0 12px}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:#1b2030;border:1px solid #2a3147;border-radius:12px;padding:16px;margin-bottom:16px}
+label{display:block;margin:10px 0 4px;color:#9aa4bd;font-size:13px}
+input[type=text],input[type=password],textarea{width:100%;padding:9px 10px;background:#0f1219;border:1px solid #2a3147;border-radius:8px;color:#e8eaf0;font:inherit}
+textarea{min-height:42px;resize:vertical}
+button{background:#2d6cdf;color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer}
+button.alt{background:#2a3147}button.red{background:#b43a3a}button:disabled{opacity:.5;cursor:default}
+.bar{position:sticky;top:0;z-index:5;background:#12151c;padding:10px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #2a3147;margin-bottom:16px}
+.bar .sp{flex:1}
+.tab.on{background:#2d6cdf}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.pic{background:#0f1219;border:1px solid #2a3147;border-radius:10px;padding:8px;text-align:center}
+.pic.chg{border-color:#e0a82e}
+.pic img{width:100%;height:150px;object-fit:contain;background:#222a3d;border-radius:6px}
+.pic small{display:block;color:#9aa4bd;word-break:break-all;margin:4px 0}
+.pic button{padding:5px 9px;font-size:13px;margin:2px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;align-items:start}
+.row .o{color:#9aa4bd;white-space:pre-wrap;word-break:break-word;font-size:14px}
+.tag{font-size:11px;background:#2a3147;border-radius:4px;padding:1px 5px;margin-right:6px}
+#log{white-space:pre-wrap;font:13px/1.4 ui-monospace,monospace;color:#9fe0a5;max-height:260px;overflow:auto}
+.err{color:#ff8a8a}
+.note{color:#9aa4bd;font-size:13px}
+@media(max-width:640px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div id="login" class="card" style="max-width:520px;margin-top:40px">
+  <h1>Admin login</h1>
+  <p class="note">Login = GitHub token jar repo te <b>write</b> access ache. Token chhara keu kichu save korte parbe na.<br>
+  Token banao: GitHub &rarr; Settings &rarr; Developer settings &rarr; Fine-grained tokens &rarr; shudhu ei repo, <b>Contents: Read and write</b>.</p>
+  <label>GitHub token</label><input id="tok" type="password" autocomplete="off" placeholder="github_pat_...">
+  <label>Owner</label><input id="own" type="text">
+  <label>Repo</label><input id="rep" type="text">
+  <label>Branch</label><input id="brn" type="text" value="main">
+  <label><input id="rem" type="checkbox" style="width:auto"> Ei device e token mone rakho (na tick korle tab bondho hole logout)</label>
+  <p><button id="go">Login</button></p>
+  <div id="lerr" class="err"></div>
+</div>
+
+<div id="app" hidden>
+  <div class="bar">
+    <button class="tab on" data-t="pics">Pictures</button>
+    <button class="tab alt" data-t="texts">Texts</button>
+    <button class="tab alt" data-t="rules">Replace rules</button>
+    <span class="sp"></span>
+    <span id="dirty" class="note"></span>
+    <button id="pub">Publish changes</button>
+    <button id="out" class="alt">Logout</button>
+  </div>
+  <div id="status" class="note"></div>
+  <div id="t-pics"><div class="card"><h2>Pictures</h2><p class="note">Card + avatar picture gulo. Replace dile image auto compress hoye webp hobe. Publish korle live site e 1-2 minute e change dekha jabe.</p><div id="pgrid" class="grid"></div></div></div>
+  <div id="t-texts" hidden><div class="card"><h2>Texts</h2><p class="note">Page er text ar game er Bangla text. Ager text exact match hole replace hoy. Khali ba same rakhle change hobe na.</p><input id="q" type="text" placeholder="Search..." style="margin-bottom:12px"><div id="tlist"></div></div></div>
+  <div id="t-rules" hidden><div class="card"><h2>Replace rules</h2><p class="note">Jodi kono text uporer list e na thake (dynamic/joratali text), ekhane "Je word/line" &rarr; "Notun" likho. Sob jaygay (jekhane match) replace hobe.</p><div id="rlist"></div><p><button id="radd" class="alt">+ Add rule</button></p></div></div>
+  <div class="card"><h2>Log</h2><div id="log"></div></div>
+</div>
+</div>
+<script>
+(function () {
+'use strict';
+function $(s, r) { return (r || document).querySelector(s); }
+function el(t, a, kids) {
+  var e = document.createElement(t);
+  for (var k in (a || {})) { if (k === 'text') e.textContent = a[k]; else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), a[k]); else e.setAttribute(k, a[k]); }
+  (kids || []).forEach(function (c) { e.appendChild(c); });
+  return e;
+}
+function hash(s) { var x = 5381, i = s.length; while (i) x = (x * 33) ^ s.charCodeAt(--i); return (x >>> 0).toString(36); }
+function norm(s) { return s.replace(/\s+/g, ' ').trim(); }
+var S = { token: '', owner: '', repo: '', branch: 'main', content: null, sha: null, assets: {}, imgs: {}, rows: [], rules: [], pend: {}, reset: {} };
+
+function log(m, bad) { var l = $('#log'); var d = el('div', { text: m }); if (bad) d.className = 'err'; l.appendChild(d); l.scrollTop = l.scrollHeight; }
+function api(path, o) {
+  o = o || {};
+  var h = { Authorization: 'Bearer ' + S.token, Accept: o.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json' };
+  if (o.body) h['Content-Type'] = 'application/json';
+  return fetch('https://api.github.com/repos/' + S.owner + '/' + S.repo + path, { method: o.method || 'GET', headers: h, body: o.body ? JSON.stringify(o.body) : undefined, cache: 'no-store' });
+}
+function utf8(b64) { return new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\n/g, '')), function (c) { return c.charCodeAt(0); })); }
+function toB64(str) { return btoa(unescape(encodeURIComponent(str))); }
+function blobB64(blob) { return new Promise(function (res, rej) { var f = new FileReader(); f.onload = function () { res(String(f.result).split(',')[1]); }; f.onerror = rej; f.readAsDataURL(blob); }); }
+function rawUrl(p) { return 'https://raw.githubusercontent.com/' + S.owner + '/' + S.repo + '/' + S.branch + '/' + p; }
+
+// ---------- config / login ----------
+(function init() {
+  var cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem('mn_admin_cfg') || '{}'); } catch (e) {}
+  var host = location.hostname, seg = location.pathname.split('/').filter(Boolean);
+  var o = cfg.owner || (/\.github\.io$/.test(host) ? host.split('.')[0] : 'shantonudebnath');
+  var r = cfg.repo || (/\.github\.io$/.test(host) && seg[0] && seg[0] !== 'admin' ? seg[0] : 'maf-nai');
+  $('#own').value = o; $('#rep').value = r; $('#brn').value = cfg.branch || 'main';
+  var t = ''; try { t = localStorage.getItem('mn_admin_tok') || sessionStorage.getItem('mn_admin_tok') || ''; } catch (e) {}
+  if (t) { $('#tok').value = t; doLogin(true); }
+})();
+$('#go').addEventListener('click', function () { doLogin(false); });
+$('#tok').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(false); });
+$('#out').addEventListener('click', function () { try { localStorage.removeItem('mn_admin_tok'); sessionStorage.removeItem('mn_admin_tok'); } catch (e) {} location.reload(); });
+
+async function doLogin(silent) {
+  $('#lerr').textContent = '';
+  S.token = $('#tok').value.trim(); S.owner = $('#own').value.trim(); S.repo = $('#rep').value.trim(); S.branch = $('#brn').value.trim() || 'main';
+  if (!S.token) return;
+  $('#go').disabled = true;
+  try {
+    var r = await api('');
+    if (!r.ok) throw new Error('Login hoy ni (' + r.status + '). Token / owner / repo check koro.');
+    var j = await r.json();
+    if (j.permissions && !j.permissions.push) throw new Error('Ei token e write access nai.');
+    try {
+      localStorage.setItem('mn_admin_cfg', JSON.stringify({ owner: S.owner, repo: S.repo, branch: S.branch }));
+      if ($('#rem').checked) localStorage.setItem('mn_admin_tok', S.token); else sessionStorage.setItem('mn_admin_tok', S.token);
+    } catch (e) {}
+    $('#login').hidden = true; $('#app').hidden = false;
+    await load();
+  } catch (e) {
+    $('#lerr').textContent = String(e.message || e);
+    try { localStorage.removeItem('mn_admin_tok'); sessionStorage.removeItem('mn_admin_tok'); } catch (e2) {}
+  }
+  $('#go').disabled = false;
+}
+
+// ---------- load + parse ----------
+async function load() {
+  $('#status').textContent = 'index.html porchi (boro file, ektu opekkha)...';
+  var r = await api('/contents/index.html?ref=' + encodeURIComponent(S.branch), { raw: true });
+  if (!r.ok) { $('#status').textContent = 'index.html pawa jay ni (' + r.status + ')'; return; }
+  var html = await r.text();
+  var cr = await api('/contents/content.json?ref=' + encodeURIComponent(S.branch));
+  var c = { text: {}, sub: {}, assets: {}, imgs: {} };
+  S.sha = null;
+  if (cr.status === 200) { var cj = await cr.json(); S.sha = cj.sha; try { var p = JSON.parse(utf8(cj.content)); ['text', 'sub', 'assets', 'imgs'].forEach(function (k) { if (p[k] && typeof p[k] === 'object') c[k] = p[k]; }); } catch (e) { log('content.json parse hoy ni, notun kore shuru', true); } }
+  S.content = c;
+  parse(html);
+  S.pend = {}; S.reset = {};
+  renderAll();
+  $('#status').textContent = S.assets ? ('Ready: ' + Object.keys(S.assets).length + ' card image, ' + Object.keys(S.imgs).length + ' avatar/static image, ' + S.rows.length + ' text.') : '';
+}
+function parse(html) {
+  var m = html.match(/window\.__ASSETS\s*=\s*(\{[\s\S]*?\})\s*;/);
+  S.assets = m ? JSON.parse(m[1]) : {};
+  var rest = m ? html.slice(m.index + m[0].length) : html;
+  S.imgs = {};
+  (rest.match(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+/g) || []).forEach(function (u) { S.imgs[hash(u)] = u; });
+
+  var map = new Map();
+  function add(t, src) {
+    t = norm(t);
+    if (!t || t.length > 400 || !/[A-Za-zঀ-৿]/.test(t)) return;
+    if (!map.has(t)) map.set(t, src);
+  }
+  var doc = new DOMParser().parseFromString(html, 'text/html');
+  var w = doc.createTreeWalker(doc.documentElement, NodeFilter.SHOW_TEXT, { acceptNode: function (n) { var p = n.parentNode && n.parentNode.nodeName; return (p === 'SCRIPT' || p === 'STYLE') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } });
+  while (w.nextNode()) add(w.currentNode.nodeValue, 'page');
+  doc.querySelectorAll('[placeholder],[title],[alt],[aria-label]').forEach(function (e) { ['placeholder', 'title', 'alt', 'aria-label'].forEach(function (a) { var v = e.getAttribute(a); if (v) add(v, 'attr'); }); });
+  var re = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g;
+  Array.prototype.forEach.call(doc.scripts, function (s) {
+    var code = s.textContent;
+    if (code.indexOf('window.__ASSETS') === 0) return;
+    var mm;
+    while ((mm = re.exec(code))) {
+      var str = mm[1] != null ? mm[1] : mm[2];
+      if (!/[ঀ-৿]/.test(str) || str.indexOf('<') > -1) continue;
+      str = str.replace(/\\u([0-9a-fA-F]{4})/g, function (x, h) { return String.fromCharCode(parseInt(h, 16)); }).replace(/\\n/g, ' ').replace(/\\(.)/g, '$1');
+      add(str, 'js');
+    }
+  });
+  S.rows = [];
+  map.forEach(function (src, key) { S.rows.push({ key: key, src: src, input: null }); });
+  S.rules = Object.keys(S.content.sub).map(function (k) { return { from: k, to: S.content.sub[k] }; });
+}
+
+// ---------- render ----------
+function renderAll() { renderPics(); renderTexts(); renderRules(); updDirty(); }
+function picSrc(kind, key, orig) {
+  var pk = kind + ':' + key;
+  if (S.pend[pk]) return S.pend[pk].url;
+  if (S.reset[pk]) return orig;
+  var ov = S.content[kind === 'a' ? 'assets' : 'imgs'][key];
+  return ov ? rawUrl(ov) : orig;
+}
+function renderPics() {
+  var g = $('#pgrid'); g.textContent = '';
+  function card(kind, key, orig, label) {
+    var pk = kind + ':' + key;
+    var chg = !!(S.pend[pk] || S.reset[pk]);
+    var has = !!(S.content[kind === 'a' ? 'assets' : 'imgs'][key]);
+    var img = el('img', { loading: 'lazy', alt: label });
+    img.src = picSrc(kind, key, orig);
+    var file = el('input', { type: 'file', accept: 'image/*', hidden: '' });
+    file.addEventListener('change', async function () {
+      if (!file.files[0]) return;
+      try {
+        var res = await processImage(file.files[0], orig);
+        if (S.pend[pk]) URL.revokeObjectURL(S.pend[pk].url);
+        S.pend[pk] = { blob: res.blob, ext: res.ext, url: URL.createObjectURL(res.blob), kind: kind, key: key };
+        delete S.reset[pk];
+        renderPics(); updDirty();
+      } catch (e) { log('Image process hoy ni: ' + (e.message || e), true); }
+    });
+    var kids = [img, el('small', { text: label }), file,
+      el('button', { text: 'Replace', onclick: function () { file.click(); } })];
+    if (chg || has) kids.push(el('button', { class: 'alt', text: 'Reset', onclick: function () { if (S.pend[pk]) { URL.revokeObjectURL(S.pend[pk].url); delete S.pend[pk]; } if (has) S.reset[pk] = true; renderPics(); updDirty(); } }));
+    g.appendChild(el('div', { class: 'pic' + (chg ? ' chg' : '') }, kids));
+  }
+  Object.keys(S.assets).forEach(function (k) { card('a', k, S.assets[k], k); });
+  var n = 0;
+  Object.keys(S.imgs).forEach(function (k) { n++; card('i', k, S.imgs[k], 'avatar/static #' + n); });
+}
+function renderTexts() {
+  var box = $('#tlist'); box.textContent = '';
+  S.rows.forEach(function (r) {
+    var cur = Object.prototype.hasOwnProperty.call(S.content.text, r.key) ? S.content.text[r.key] : r.key;
+    var ta = el('textarea', {}); ta.value = cur; r.input = ta; r.cur = cur;
+    ta.addEventListener('input', updDirty);
+    r.row = el('div', { class: 'row' }, [el('div', { class: 'o' }, [el('span', { class: 'tag', text: r.src }), document.createTextNode(r.key)]), ta]);
+    box.appendChild(r.row);
+  });
+}
+$('#q').addEventListener('input', function () {
+  var q = $('#q').value.trim().toLowerCase();
+  S.rows.forEach(function (r) { r.row.hidden = q && r.key.toLowerCase().indexOf(q) < 0 && r.input.value.toLowerCase().indexOf(q) < 0; });
+});
+function renderRules() {
+  var box = $('#rlist'); box.textContent = '';
+  S.rules.forEach(function (r, i) {
+    var a = el('textarea', {}); a.value = r.from; a.addEventListener('input', function () { r.from = a.value; updDirty(); });
+    var b = el('textarea', {}); b.value = r.to; b.addEventListener('input', function () { r.to = b.value; updDirty(); });
+    var d = el('button', { class: 'red', text: 'Delete', onclick: function () { S.rules.splice(i, 1); renderRules(); updDirty(); } });
+    box.appendChild(el('div', { class: 'row' }, [a, el('div', {}, [b, d])]));
+  });
+}
+$('#radd').addEventListener('click', function () { S.rules.push({ from: '', to: '' }); renderRules(); });
+Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+  b.addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (x) { x.classList.toggle('on', x === b); x.classList.toggle('alt', x !== b); });
+    ['pics', 'texts', 'rules'].forEach(function (t) { $('#t-' + t).hidden = t !== b.dataset.t; });
+  });
+});
+
+// ---------- compute pending state ----------
+function newText() {
+  var o = {};
+  S.rows.forEach(function (r) { var v = r.input ? r.input.value : r.key; if (norm(v) !== '' && v !== r.key) o[r.key] = v; });
+  return o;
+}
+function newSub() { var o = {}; S.rules.forEach(function (r) { if (r.from && r.to !== r.from) o[r.from] = r.to; }); return o; }
+function countChanges() {
+  var n = Object.keys(S.pend).length + Object.keys(S.reset).length;
+  if (JSON.stringify(newText()) !== JSON.stringify(S.content.text)) n += 1;
+  if (JSON.stringify(newSub()) !== JSON.stringify(S.content.sub)) n += 1;
+  return n;
+}
+function updDirty() { var n = countChanges(); $('#dirty').textContent = n ? 'Unpublished change: ' + n : ''; }
+
+// ---------- image processing ----------
+function loadImg(src) { return new Promise(function (res, rej) { var i = new Image(); i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('image khola jay ni')); }; i.src = src; }); }
+async function processImage(file, origUri) {
+  var url = URL.createObjectURL(file);
+  var im = await loadImg(url);
+  var cap = 1600;
+  try { var o = await loadImg(origUri); cap = Math.min(2000, Math.max(o.naturalWidth, o.naturalHeight) || 1600); } catch (e) {}
+  var sc = Math.min(1, cap / Math.max(im.naturalWidth, im.naturalHeight));
+  var cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(im.naturalWidth * sc)); cv.height = Math.max(1, Math.round(im.naturalHeight * sc));
+  cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+  URL.revokeObjectURL(url);
+  var blob = await new Promise(function (res) { cv.toBlob(res, 'image/webp', 0.9); });
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise(function (res) { cv.toBlob(res, 'image/png'); });
+  return { blob: blob, ext: blob.type === 'image/webp' ? 'webp' : 'png' };
+}
+
+// ---------- publish ----------
+async function putFile(path, b64, msg) {
+  var sha;
+  var g = await api('/contents/' + path.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(S.branch));
+  if (g.status === 200) sha = (await g.json()).sha;
+  var body = { message: msg, content: b64, branch: S.branch };
+  if (sha) body.sha = sha;
+  var r = await api('/contents/' + path.split('/').map(encodeURIComponent).join('/'), { method: 'PUT', body: body });
+  if (!r.ok) throw new Error(path + ' save hoy ni (' + r.status + ') ' + (await r.text()).slice(0, 200));
+  return r.json();
+}
+$('#pub').addEventListener('click', async function () {
+  if (!countChanges()) { log('Kono change nai.'); return; }
+  var btn = $('#pub'); btn.disabled = true;
+  try {
+    var c = JSON.parse(JSON.stringify(S.content));
+    c.text = newText(); c.sub = newSub();
+    var keys = Object.keys(S.pend);
+    for (var i = 0; i < keys.length; i++) {
+      var p = S.pend[keys[i]];
+      var slug = p.key.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      var path = 'assets/' + (p.kind === 'a' ? slug : 'img-' + slug) + '-' + Date.now().toString(36) + '.' + p.ext;
+      log('Uploading ' + path + ' ...');
+      await putFile(path, await blobB64(p.blob), 'admin: update image ' + p.key);
+      c[p.kind === 'a' ? 'assets' : 'imgs'][p.key] = path;
+    }
+    Object.keys(S.reset).forEach(function (pk) { var kind = pk.charAt(0), key = pk.slice(2); delete c[kind === 'a' ? 'assets' : 'imgs'][key]; });
+    log('Saving content.json ...');
+    var cj = toB64(JSON.stringify(c, null, 2));
+    var body = { message: 'admin: update site content', content: cj, branch: S.branch };
+    var path2 = '/contents/content.json';
+    var g = await api(path2 + '?ref=' + encodeURIComponent(S.branch));
+    if (g.status === 200) body.sha = (await g.json()).sha;
+    var r = await api(path2, { method: 'PUT', body: body });
+    if (!r.ok) throw new Error('content.json save hoy ni (' + r.status + ') ' + (await r.text()).slice(0, 200));
+    log('Done. GitHub Pages rebuild hote 1-2 minute lage, tarpor live site refresh koro.');
+    Object.keys(S.pend).forEach(function (k) { URL.revokeObjectURL(S.pend[k].url); });
+    await load();
+  } catch (e) { log(String(e.message || e), true); }
+  btn.disabled = false;
+});
+})();
+</script>
+</body>
+</html>
